@@ -196,6 +196,8 @@ $project_class = $sub_projects ? 'with-sub-projects' : '';
 		<?php
 		if ( $sub_project->active ) {
 			echo "<span class='active bubble'>" . __( 'Active', 'glotpress' ) . '</span>';
+		} else { // WPCOM: add retired bubble
+			echo "<span class='inactive bubble'>" . __( 'Retired', 'glotpress' ) . '</span>';
 		}
 		?>
 	</dt>
