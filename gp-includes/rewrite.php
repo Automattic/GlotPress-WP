@@ -31,7 +31,8 @@ function gp_generate_rewrite_rules( $gp_base = false ) {
 		$rules['^' . $gp_base . '\/+(.*)$'] = 'index.php?gp_route=$matches[1]';
 	}
 
-	return $rules;
+	// WPCOM: added filters hook
+	return apply_filters( 'gp_generate_rewrite_rules', $rules );
 }
 
 /**
