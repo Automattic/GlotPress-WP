@@ -523,16 +523,23 @@ class GP_Thing {
 		return true;
 	}
 
-	public function sql_condition_from_php_value( $php_value ) {
+	public function sql_condition_from_php_value( $php_value, $php_key = null ) {
 		global $wpdb;
+
 		if ( is_array( $php_value ) ) {
-			return array_map( array( &$this, 'sql_condition_from_php_value' ), $php_value );
+			return array_map( array( &$this, 'sql_condition_from_php_value' ), $php_value, array_fill( 0, count( $php_value ), $php_key ) );
 		}
-		$operator = '=';
-		if ( is_integer( $php_value ) || ctype_digit( $php_value) )
-		 	$sql_value = $php_value;
-		else
-			$sql_value = "'" . esc_sql( $php_value )  ."'";
+
+		$operator = strpos( $php_key, 'before_' ) === 0 ? '>' :
+			strpos( $php_key, 'after_' ) === 0 ? '<' :
+			'=';
+
+		if ( is_integer( $php_value ) || ctype_digit( $php_value ) ) {
+			$sql_value = $php_value;
+		} else {
+			$sql_value = "'" . esc_sql( $php_value ) . "'";
+		}
+
 		if ( is_null( $php_value ) ) {
 			$operator = 'IS';
 			$sql_value = 'NULL';
@@ -544,10 +551,18 @@ class GP_Thing {
 		if ( is_string( $conditions ) ) {
 			$conditions;
 		} elseif ( is_array( $conditions ) ) {
-			$conditions = array_map( array( &$this, 'sql_condition_from_php_value' ), $conditions );
+			$conditions = array_combine(
+				array_keys( $conditions ),
+				array_map( array( &$this, 'sql_condition_from_php_value' ), $conditions, array_keys( $conditions ) )
+			);
+
 			$string_conditions = array();
 
 			foreach ( $conditions as $field => $sql_condition ) {
+				if ( strpos( $field, 'before_' ) ) {
+					$field = preg_replace( '/^(before|after)_/', '', $field );
+				}
+
 				if ( is_array( $sql_condition ) ) {
 					$string_conditions[] = '(' . implode( ' OR ', array_map( function( $cond ) use ( $field ) {
 							return "$field $cond";
