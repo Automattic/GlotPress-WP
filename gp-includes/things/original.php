@@ -292,6 +292,7 @@ class GP_Original extends GP_Thing {
 				 * @param object $original The previous original being replaced.
 				 */
 				$do_fuzzy = apply_filters( 'gp_set_translations_for_original_to_fuzzy', true, (object) $data, $original );
+				$previous_version = clone $original;
 
 				// We'll update the old original...
 				$this->update( $data, array( 'id' => $original->id ) );
@@ -303,6 +304,8 @@ class GP_Original extends GP_Thing {
 				} else {
 					$originals_existing++;
 				}
+
+				$this->save_original_history( $original->id, $previous_version );
 
 				// No need to obsolete it now.
 				unset( $possibly_dropped[ $close_original ] );
@@ -356,6 +359,30 @@ class GP_Original extends GP_Thing {
 		foreach ( $translations as $translation ) {
 			$translation->set_status( 'fuzzy' );
 		}
+	}
+
+	private function save_original_history( $original_id, $previous_version ) {
+		$original_history = gp_get_meta( 'original', $original_id, 'history' ) ?? [];
+		if ( ! is_array( $original_history ) ) {
+			$original_history = [];
+		}
+
+		$original_history[] = [
+			'context' => $previous_version->context,
+			'singular' => $previous_version->singular,
+			'plural' => $previous_version->plural,
+			'references' => $previous_version->references,
+			'comment' => $previous_version->comment,
+			'status' => $previous_version->status,
+			'date_updated' => $this->now_in_mysql_format(),
+		];
+
+		gp_update_meta(
+			$original_id,
+			'history',
+			$original_history,
+			'original'
+		);
 	}
 
 	public function is_different_from( $data, $original = null ) {
