@@ -198,6 +198,16 @@ class GP_Original extends GP_Thing {
 			);
 
 			$originals_by_key[ $entry->key() ] = $original;
+
+			// WPCOM modification start
+			foreach ( explode( ' ', $original->references ) as $reference ) {
+				list( $filename, $line ) = explode( ':', $reference, 2 );
+				if ( ! isset( $references[ $filename ] ) ) {
+					$references[ $filename ] = array();
+				}
+				$references[ $filename ][ $entry->key() ] = true;
+			}
+			// WPCOM modification end
 		}
 
 		$obsolete_originals = array_filter(
@@ -208,6 +218,19 @@ class GP_Original extends GP_Thing {
 		);
 
 		$possibly_added = $possibly_dropped = array();
+
+		// WPCOM modification start
+		/**
+		 * Filters the set of originals to be imported.
+		 *
+		 * This allows to prevent the obsoletion of existing entries.
+		 *
+		 * @param \Translations $translations The translations being imported.
+		 * @param \GP_Project $project The project being imported against.
+		 * @param array $originals_by_key An array of \GP_Original's by \Translation_Entry::key() that are currently in the project.
+		 */
+		$translations = apply_filters( 'gp_import_project_originals', $translations, $project, $originals_by_key );
+		// WPCOM modification end
 
 		foreach ( $translations->entries as $key => $entry ) {
 			$wpdb->queries = array();
@@ -334,6 +357,44 @@ class GP_Original extends GP_Thing {
 					continue;
 				}
 
+				// WPCOM modification start
+				$unobsoleted_originals = $modified_originals;
+				foreach ( $entry->references as $reference ) {
+					list( $filename, $line ) = explode( ':', $reference, 2 );
+
+					// New files don't have preexisting references
+					if ( isset( $references[ $filename ] ) ) {
+						foreach ( array_keys( $references[ $filename ] ) as $original_key ) {
+							// Same-line file with the old original still existing.
+							$unobsoleted_originals[ $original_key ] = true;
+						}
+					}
+				}
+
+				// Search for match in the existing strings.
+				$close_original = $this->closest_original( $entry->key(), array_keys( $unobsoleted_originals ) );
+				// We found a match - probably a slightly changed string.
+				if ( $close_original ) {
+					$original = $originals_by_key[ $close_original ];
+
+					/**
+					 * Filters whether to set copy translations as fuzzy or another status.
+					 *
+					 * This filter is called when a new string closely match an existing but not dropped string.
+					 *
+					 * Allow return values: 'copy', 'current', 'fuzzy', or 'old'. Otherwise no copying will take place.
+					 *
+					 * @since ?
+					 *
+					 * @param string|bool $new_status   The status of the copied translations.
+					 * @param object      $new_original The new original.
+					 * @param object      $original     The source original from which translations will be copied.
+					 */
+					$new_status = apply_filters( 'gp_copy_translations_for_original_as_status', 'fuzzy', $created, $original );
+					$this->copy_translations_from_original_to_original( $original, $created, $new_status );
+				}
+				// WPCOM modification end
+
 				$originals_added++;
 			}
 		}
@@ -369,6 +430,24 @@ class GP_Original extends GP_Thing {
 		return array( $originals_added, $originals_existing, $originals_fuzzied, $originals_obsoleted, $originals_error );
 	}
 
+	// WPCOM modification start
+	public function copy_translations_from_original_to_original( $from_original, $to_original, $new_status = 'copy' ) {
+		$modifiable_statuses = array( 'current', 'fuzzy', 'old' );
+		if ( ! in_array( $new_status, array_merge( array( 'copy' ), $modifiable_statuses ) ) ) {
+			return false;
+		}
+		$translations = GP::$translation->find_many( "original_id = '{$from_original->id}' AND status = 'current'" );
+		foreach ( $translations as $translation ) {
+			$translation->id = null;
+			$translation->original_id = $to_original->id;
+			if ( in_array( $translation->status, $modifiable_statuses ) && $new_status !== 'copy' ) {
+				$translation->status = $new_status;
+			}
+			GP::$translation->create( $translation );
+		}
+	}
+	// WPCOM modification end
+
 	public function set_translations_for_original_to_fuzzy( $original_id ) {
 		$translations = GP::$translation->find_many( "original_id = '$original_id' AND status = 'current'" );
 		foreach ( $translations as $translation ) {
@@ -395,6 +474,21 @@ class GP_Original extends GP_Thing {
 	}
 
 	public function closest_original( $input, $other_strings ) {
+		/**
+		 * Filters the preemptive return value of closest original check.
+		 *
+		 * @since x.y.z
+		 *
+		 * @param mixed  $pre           A preemptive return value of closest original
+		 *                              check. Default false.
+		 * @param string $input         Input string.
+		 * @param array  $other_strings List of string to check against input string.
+		 */
+		$pre = apply_filters( 'gp_pre_closest_original', false, $input, $other_strings );
+		if ( false !== $pre ) {
+			return $pre;
+		}
+
 		if ( empty( $other_strings ) ) {
 			return null;
 		}
